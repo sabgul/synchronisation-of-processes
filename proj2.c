@@ -7,23 +7,48 @@
 *         06/04/20           *
 * * * * * * * * * * * * * * */
 
+/*
+Extended makefile:
+make checks
+pak zavries semafory pomocou:
+make clear_sems
+*/
+
+
 //#include "proj2.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
+#include <semaphore.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+/*--------------------Constants--------------------*/
 #define FAIL 1
 #define SUCCESS 0
 #define MIN_MSEC 0
 #define MAX_MSEC 2000
 #define REQUIRED_ARGS 6
 
-
+/*-------------------Functions--------------------*/
 int errorCheck(int argc, char *argv[]);
+
+
+/*------------------Semaphores--------------------*/
+
+
+
+//deklarovat semafor
+//namapovat do pamate
+//pouzit
+//nakoniec vsetky uzavriet
 
 //chyby vypisovat na stderr, exit code 1
 //tiez uvolnit vsetky alokovane zdroje
+
+//xgulci00.ios.proj2.nazov
 
 /**
 * immigrants == PI
@@ -72,26 +97,6 @@ int errorCheck(int argc, char *argv[]) {
     }
   }
 
-  // if (timeImm < MIN_MSEC || timeImm > MAX_MSEC) {
-  //   fprintf(stderr, "error: invalid argument (max time for generation of new process)\n");
-  //   return FAIL;
-  // }
-  //
-  // if (timeJudgeEnter < MIN_MSEC || timeJudgeEnter > MAX_MSEC) {
-  //   fprintf(stderr, "error: invalid argument (max time for generation of new process)\n");
-  //   return FAIL;
-  // }
-  //
-  // if (timeGetCertificate < MIN_MSEC || timeJudgeEnter > MAX_MSEC) {
-  //   fprintf(stderr, "error: invalid argument (max time for generation of new process)\n");
-  //   return FAIL;
-  // }
-  //
-  // if (timeIssueCertificate < MIN_MSEC || timeIssueCertificate > MAX_MSEC) {
-  //   fprintf(stderr, "error: invalid argument (max time for generation of new process)\n");
-  //   return FAIL;
-  // }
-
   return SUCCESS;
 }
 
@@ -99,6 +104,24 @@ int errorCheck(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
   if (errorCheck(argc, argv) == FAIL)
     return FAIL;
+
+    //prvni fork
+    // pid_t immigrant = fork();
+    //
+    // if (immigrant < 0) {
+    //     fprintf(stderr,"Vytvoreni child procesu selhalo(hacker)\n");
+    //     // cleanUp(id,ptr);
+    //     // exit(1);
+    //     return 1;
+    // }
+    // else if (hacker == 0) {
+    //     //child process #1
+    //
+    //     // processHack(hackTime,People,ptr,maxWaitTime,capacity,sailTime);
+    // }
+    // else
+    // {//parent
+
 
   return SUCCESS;
 }
