@@ -1,0 +1,24 @@
+CC=gcc
+CFLAGS=-std=gnu99 -Wall -Wextra -Werror -pedantic
+#LIBFLAG=-lpthread
+#ARGS= sem pridat argumenty pro nejake basic jednoduche spusteni
+X = proj2
+.PHONY: run build check clean clear_sems
+
+build: $(X).c
+	$(CC) $(CFLAGS) $(X).c -o $(X)
+
+check:
+	@clear
+	@echo "-----Neuzavrene semafory-----"
+	@ls "/dev/shm"
+	@echo "-----------------------------"
+	@echo "-------Spustene procesy------"
+	@ps aux | grep 'proj2'
+	@echo "-----------------------------"
+
+clean:
+	rm -f $(X) $(X).o
+
+clear_sems:
+	rm /dev/shm/*
