@@ -7,14 +7,6 @@
 *         06/04/20           *
 * * * * * * * * * * * * * * */
 
-/*
-Extended makefile:
-make checks
-pak zavries semafory pomocou:
-make clear_sems
-*/
-
-
 //#include "proj2.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,9 +24,15 @@ make clear_sems
 #define MAX_MSEC 2000
 #define REQUIRED_ARGS 6
 
+/*----------------Global variables-----------------*/
+sem_t *semaphore = NULL;
+FILE *output;
+
+
+
 /*-------------------Functions--------------------*/
 int errorCheck(int argc, char *argv[]);
-
+int initialise();
 
 /*------------------Semaphores--------------------*/
 
@@ -57,6 +55,9 @@ int errorCheck(int argc, char *argv[]);
 * timeGetCertificate == IT
 * timeIssueCertificate == JT
 **/
+
+/*-------------------Functions--------------------*/
+
 
 /*Function checks for potential errors caused by invalid input*/
 int errorCheck(int argc, char *argv[]) {
@@ -100,11 +101,76 @@ int errorCheck(int argc, char *argv[]) {
   return SUCCESS;
 }
 
+int initialise() {
+  output = fopen("proj2.out", w);
+  if(semaphore = sem_open("/xgulci00.ios.proj2.semaphore", O_CREAT | O_EXCL, 0666, 1)== SEM_FAILED) {
+    fprintf(stderr, "error: initialisation of semaphore failed\n", );
+    return FAIL;
+  }
+  return SUCCESS;
+}
+
+void cleanup() {
+  //sem_close(sem);
+  sem_unlink("xgulci00.ios.proj2.semaphore");
+  if (output != NULL) {
+    fclose(output);
+  }
+}
+//
+// void process_judge(delay,) {
+//   exit(0);
+// }
+//
+// void process_immigrant(delay, ) {
+//   exit(0);
+// }
+  //
+  // void gen_immigrants(int numOfImmigrants, int delay){
+  //   for(int i = 0; i < numOfImmigrants; i ++){
+  //
+  //     sleep(delay);
+  //   }
+  // }
+  //
 
 int main(int argc, char *argv[]) {
   if (errorCheck(argc, argv) == FAIL)
     return FAIL;
 
+  if (initialise() == FAIL) {
+    cleanup();
+    return FAIL;
+  }
+    // pid_t judge = fork();
+    //
+    // if(judge < 0) {
+    //   fprintf(stderr, "error: invalid fork\n");
+    //   return 1;
+    // } else if (judge == 0) {
+    //   //judge
+    // } else {
+    //   //gen_immigrants(pocet imigrantov, delay);
+    // }
+    //
+    // pid_t judge = fork();
+    //
+    // if (first < 0) {
+    //   fprintf(stdout, "Fork didnt work\n");
+    // } else if (first == 0) {
+    //   fprintf(stdout, "Ahoj ja som child process 1\n");
+    // } else {
+    //   fprintf(stdout, "Ahoj ja som parent process 1\n");
+    //   pid_t second = fork();
+    //   if(second < 0) {
+    //     fprintf(stdout, "Chyba v druhom forku\n");
+    //   } else if (second == 0) {
+    //     fprintf(stdout, "AHoj ja som child process 2\n");
+    //   } else {
+    //     fprintf(stdout, "Ahoj ja som co ostalo\n");
+    //   }
+    // }
+    //
     //prvni fork
     // pid_t immigrant = fork();
     //
@@ -122,6 +188,7 @@ int main(int argc, char *argv[]) {
     // else
     // {//parent
 
-
+  cleanup();
+  exit(0);
   return SUCCESS;
 }
