@@ -20,7 +20,11 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
+/*------------------------Q-------------------------*/
+
+//Cas generovat pre kazdeho osobitne?
 
 /*--------------------Constants--------------------*/
 #define FAIL 1
@@ -30,10 +34,14 @@
 #define REQUIRED_ARGS 6
 
 /*----------------Global variables-----------------*/
-sem_t *semaphore = NULL;
+sem_t *semaphore;
 FILE *output;
 int *action;
 int *immID;
+int *immInside; // == NE
+int *registered;
+//int *confirmed;
+bool judgePresent = false;
 /*-------------------Functions--------------------*/
 int errorCheck(int argc, char *argv[]);
 int initialise();
@@ -125,15 +133,23 @@ void open_semaphores() {
 void memory_setup() {
     int shmAction = shm_open("/xgulci00.action", O_CREAT | O_EXCL | O_RDWR, 0644);
     int shmIdentif = shm_open("/xgulci00.identif", O_CREAT | O_EXCL | O_RDWR, 0644);
+    int shmInside = shm_open("/xgulci00.inside", O_CREAT | O_EXCL | O_RDWR, 0644);
+    int shmRegistered = shm_open("/xgulci00.registered", O_CREAT | O_EXCL | O_RDWR, 0644);
 
     ftruncate(shmAction,sizeof(int));
     ftruncate(shmIdentif,sizeof(int));
+    ftruncate(shmInside,sizeof(int));
+    ftruncate(shmRegistered, sizeof(int));
 
     action = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmAction,0);
     immID = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmIdentif,0);
+    immInside = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmInside,0);
+    registered = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmRegistered,0);
 
     if (action == MAP_FAILED ||
-        immID == MAP_FAILED) {
+        immID == MAP_FAILED ||
+        immInside == MAP_FAILED ||
+        registered == MAP_FAILED) {
       fprintf(stderr, "error: mapping failed\n");
       cleanup();
       exit(FAIL);
@@ -165,9 +181,13 @@ void cleanup() {
 
   munmap(action, sizeof(int));
   munmap(immID, sizeof(int));
+  munmap(immInside, sizeof(int));
+  munmap(registered, sizeof(int));
 
   shm_unlink("/xgulci00.action");
   shm_unlink("/xgulci00.identif");
+  shm_unlink("/xgulci00.inside");
+  shm_unlink("/xgulci00.registered");
   //close(shmAction);
 }
 /*------------------------------------------------*/
@@ -177,40 +197,50 @@ void cleanup() {
 //   exit(0);
 // }
 //
-// void process_immigrant(delay, numberOfImmigrants, timeToGetCertif) {
-//   exit(0);
-// }
+void process_immigrant(int identificator/*int delay, int numberOfImmigrants, int timeToGetCertif*/) {
+  //while(judgePresent);
+  if(!judgePresent) {
+    sem_wait(printMessage);
+    (*action)++;
+    (*immInside)++;
+    fprintf(stdout, "%d     : IMM %d      : enters      : NE      : %d       : %d \n", *action, identificator, *registered, *immInside);
+    sem_post(printMessage);
+
+  }
+}
   //
 
 void gen_immigrants(int numOfImmigrants, int delay) {
-
+    int status = 0;
+    pid_t wpid;
     srand(time(NULL));
 
     for(int i = 0; i < numOfImmigrants; i ++) {
-      sem_wait(printMessage);
-      (*action)++;
-      fprintf(stdout, "%d. LOOP numero: %d\n", *action, i);
-      sem_post(printMessage);
 
       pid_t imm = fork();
 
       if(imm < 0) {
         fprintf(stderr, "error: invalid fork\n");
+        cleanup();
         exit(FAIL);
 
       } else if (imm == 0) {
         sem_wait(printMessage);
         (*action)++;
-        fprintf(stdout, "%d. IMM %d :starts (I am child and I should do something)\n", *action, *immID);
+        fprintf(stdout, "%d     : IMM %d      : starts \n", *action, *immID + 1);
         (*immID)++;
         sem_post(printMessage);
+
+        process_immigrant(*immID);
+        //cleanup();
         //exit(SUCCESS);
 
       } else {
-        sem_wait(printMessage);
-        (*action)++;
-        fprintf(stdout, "%d. I am parent\n", *action);
-        sem_post(printMessage);
+        // sem_wait(printMessage);
+        // (*action)++;
+        // fprintf(stdout, "%d. I am parent\n", *action);
+        // sem_post(printMessage);
+        while ((wpid = wait(&status)) > 0); //waits till child process ends
         exit(SUCCESS);
       }
 
@@ -218,6 +248,11 @@ void gen_immigrants(int numOfImmigrants, int delay) {
     }
     exit(SUCCESS);
   }
+
+
+/*------------------------------------------------*/
+/*--------------------MAIN------------------------*/
+/*------------------------------------------------*/
 
 int main(int argc, char *argv[]) {
   if (errorCheck(argc, argv) == FAIL) {
@@ -242,6 +277,8 @@ int IG = strtol(argv[2], &end, 10);
 // //max time for issuance of a certificate
 // int JT = strtol(argv[5], &end, 10);
 /*------------------------------------------------*/
+int status = 0;
+pid_t wpid;
 
 //First division of process
     pid_t judge = fork();
@@ -252,7 +289,7 @@ int IG = strtol(argv[2], &end, 10);
     } else if (judge == 0) {
       //judge child process
       //process_judge();
-      //exit(SUCCESS);
+      exit(SUCCESS);
     } else {
       //second division of process
       pid_t immigrant = fork();
@@ -262,12 +299,14 @@ int IG = strtol(argv[2], &end, 10);
         return FAIL;
       } else if (immigrant == 0) {
       //immgirant child process
-      gen_immigrants(PI, IG);
+        gen_immigrants(PI, IG);
         exit(SUCCESS);
       } else {
-        //waitpid();
+        //waitpid(-1, NULL, 0);
+        while ((wpid = wait(&status)) > 0); //waits till child process ends
       }
-      //waitpid();
+      //waitpid(-1, NULL, 0);
+      while ((wpid = wait(&status)) > 0); //waits till child process ends
     }
   cleanup();
   //exit(SUCCESS);
