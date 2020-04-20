@@ -8,19 +8,19 @@
 * * * * * * * * * * * * * * */
 
 //#include "proj2.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <semaphore.h>
+#include <stdbool.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <pthread.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <stdbool.h>
+#include <semaphore.h>
 
 /*------------------------Q-------------------------*/
 
@@ -38,10 +38,17 @@ sem_t *semaphore;
 FILE *output;
 int *action;
 int *immID;
-int *immInside; // == NE
-int *registered;
-//int *confirmed;
-bool judgePresent = false;
+int *insideWaiting; // == NE -> inside, not confirmed
+int *registered; // == NC -> registered, not confirmed
+int *immInside; // == NB -> inside the building
+int *confirmed; // number of immigrants that were given confirmation
+/*-----------------Shared memory------------------*/
+int shmAction;
+int shmIdentif;
+int shmInside;
+int shmRegistered;
+int shmWaiting;
+int shmConfirmed;
 /*-------------------Functions--------------------*/
 int errorCheck(int argc, char *argv[]);
 int initialise();
@@ -49,6 +56,10 @@ void open_semaphores();
 void memory_setup();
 void close_semaphores();
 void cleanup();
+void mysleep(int delay);
+void process_immigrant(int identificator, int getCertif/*int delay, int numberOfImmigrants, int timeToGetCertif*/);
+void process_judge( int delay, int totalImm, int toEnter/*delay, timeToEnter, timeToConfirm*/ );
+void gen_immigrants(int numOfImmigrants, int delay, int getCertif);
 /*------------------Semaphores--------------------*/
 
 sem_t *printMessage; /*avoids overlapping*/
@@ -104,7 +115,8 @@ int errorCheck(int argc, char *argv[]) {
 
 /*Function prepares file for output, creates shared memory and loads semaphores*/
 int initialise() {
-  output = fopen("proj2.out", "w");
+//  output = fopen("proj2.out", "w");
+  output = stdout;
   memory_setup();
   open_semaphores();
   return SUCCESS;
@@ -113,9 +125,9 @@ int initialise() {
 /*Function opens all semaphores*/
 void open_semaphores() {
   printMessage = sem_open("/xgulci00.ios.proj2.print", O_CREAT | O_EXCL, 0644, 1);
-  judgeInHouse = sem_open("/xgulci00.ios.proj2.judge", O_CREAT | O_EXCL, 0644, 0);
+  judgeInHouse = sem_open("/xgulci00.ios.proj2.judge", O_CREAT | O_EXCL, 0644, 1);
   allRegistered = sem_open("/xgulci00.ios.proj2.ready", O_CREAT | O_EXCL, 0644, 0);
-  registration = sem_open("/xgulci00.ios.proj2.registration", O_CREAT | O_EXCL, 0644, 0);
+  registration = sem_open("/xgulci00.ios.proj2.registration", O_CREAT | O_EXCL, 0644, 1);
   ongoingConfirmation = sem_open("/xgulci00.ios.proj2.confirmation", O_CREAT | O_EXCL, 0644, 0);
 
   if (printMessage == SEM_FAILED ||
@@ -131,25 +143,33 @@ void open_semaphores() {
 
 /*Function allocates shared memory to be used across all the processes*/
 void memory_setup() {
-    int shmAction = shm_open("/xgulci00.action", O_CREAT | O_EXCL | O_RDWR, 0644);
-    int shmIdentif = shm_open("/xgulci00.identif", O_CREAT | O_EXCL | O_RDWR, 0644);
-    int shmInside = shm_open("/xgulci00.inside", O_CREAT | O_EXCL | O_RDWR, 0644);
-    int shmRegistered = shm_open("/xgulci00.registered", O_CREAT | O_EXCL | O_RDWR, 0644);
+    shmAction = shm_open("/xgulci00.action", O_CREAT | O_EXCL | O_RDWR, 0644);
+    shmIdentif = shm_open("/xgulci00.identif", O_CREAT | O_EXCL | O_RDWR, 0644);
+    shmInside = shm_open("/xgulci00.inside", O_CREAT | O_EXCL | O_RDWR, 0644);
+    shmRegistered = shm_open("/xgulci00.registered", O_CREAT | O_EXCL | O_RDWR, 0644);
+    shmWaiting = shm_open("/xgulci00.waiting", O_CREAT | O_EXCL | O_RDWR, 0644);
+    shmConfirmed = shm_open("/xgulci00.confirmed", O_CREAT | O_EXCL | O_RDWR, 0644);
 
     ftruncate(shmAction,sizeof(int));
     ftruncate(shmIdentif,sizeof(int));
     ftruncate(shmInside,sizeof(int));
     ftruncate(shmRegistered, sizeof(int));
+    ftruncate(shmWaiting, sizeof(int));
+    ftruncate(shmConfirmed, sizeof(int));
 
-    action = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmAction,0);
-    immID = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmIdentif,0);
-    immInside = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmInside,0);
-    registered = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmRegistered,0);
+    action = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmAction,0); //the number of action that has just happened
+    immID = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmIdentif,0); //ID of immigrant
+    immInside = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmInside,0); //number of immigrants within the building
+    registered = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmRegistered,0); //number of registered immigrants within the building
+    insideWaiting = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmWaiting,0);
+    confirmed = mmap(NULL,sizeof(int),PROT_READ|PROT_WRITE,MAP_SHARED,shmConfirmed,0);
 
     if (action == MAP_FAILED ||
         immID == MAP_FAILED ||
         immInside == MAP_FAILED ||
-        registered == MAP_FAILED) {
+        registered == MAP_FAILED ||
+        insideWaiting == MAP_FAILED ||
+        confirmed == MAP_FAILED) {
       fprintf(stderr, "error: mapping failed\n");
       cleanup();
       exit(FAIL);
@@ -171,52 +191,182 @@ void close_semaphores() {
   sem_unlink("/xgulci00.ios.proj2.confirmation");
 }
 
+void mysleep(int delay) {
+  srand(time(NULL));
+  usleep((rand()%delay+1)*1000);
+}
+
 /*Function closes the ouput file and deals with semaphores*/
 void cleanup() {
   close_semaphores();
 
-  if (output != NULL) {
-    fclose(output);
-  }
+  // if (output != NULL) {
+  //   fclose(output);
+  // }
 
   munmap(action, sizeof(int));
   munmap(immID, sizeof(int));
   munmap(immInside, sizeof(int));
   munmap(registered, sizeof(int));
+  munmap(insideWaiting, sizeof(int));
+  munmap(confirmed, sizeof(int));
 
   shm_unlink("/xgulci00.action");
   shm_unlink("/xgulci00.identif");
   shm_unlink("/xgulci00.inside");
   shm_unlink("/xgulci00.registered");
+  shm_unlink("/xgulci00.waiting");
+  shm_unlink("/xgulci00.confirmed");
   //close(shmAction);
+
+  close(shmAction);
+  close(shmIdentif);
+  close(shmInside);
+  close(shmRegistered);
+  close(shmWaiting);
+  close(shmConfirmed);
+
 }
 /*------------------------------------------------*/
 
 /*----------------Synchronisation-----------------*/
-// void process_judge(delay, timeToEnter, timeToConfirm) {
-//   exit(0);
-// }
-//
-void process_immigrant(int identificator/*int delay, int numberOfImmigrants, int timeToGetCertif*/) {
-  //while(judgePresent);
-  if(!judgePresent) {
+void process_judge( int delay, int totalImm, int toEnter/*delay, timeToEnter, timeToConfirm*/ ) {
+while(*confirmed < totalImm) {
+  mysleep(toEnter);
+
+  sem_wait(printMessage);
+
+  (*action)++; //so that we start from 1
+  fprintf(output, "%d     : JUDGE      : wants to enter\n", *action);
+
+  sem_post(printMessage);
+
+
+  sem_wait(judgeInHouse);
+  sem_wait(printMessage);
+
+  (*action)++; //so that we start from 1
+  fprintf(output, "%d     : JUDGE      : enters      : %d      : %d       : %d \n", *action, *insideWaiting, *registered, *immInside);
+
+  sem_post(printMessage);
+
+  if (*insideWaiting != *registered) {
     sem_wait(printMessage);
-    (*action)++;
-    (*immInside)++;
-    fprintf(stdout, "%d     : IMM %d      : enters      : NE      : %d       : %d \n", *action, identificator, *registered, *immInside);
+
+    (*action)++; //so that we start from 1
+    fprintf(output, "%d     : JUDGE      : waits for imm      : %d      : %d       : %d \n", *action, *insideWaiting, *registered, *immInside);
+
+    sem_post(printMessage);
+    while(*insideWaiting != *registered);
+  }
+  int toBeLet = 0;
+  if (*insideWaiting == *registered) {
+    sem_wait(printMessage);
+
+    (*action)++; //so that we start from 1
+    fprintf(output, "%d     : JUDGE      : starts confirmation      : %d      : %d       : %d \n", *action, *insideWaiting, *registered, *immInside);
+
     sem_post(printMessage);
 
+    //sem_wait(ongoingConfirmation);
+    mysleep(delay);
+    (*confirmed)+= *registered;
+    //(*insideWaiting)-= registered;
+    (*action)++; //so that we start from 1
+    toBeLet = *registered;
+    (*registered) = 0;
+    (*insideWaiting) = 0;
+    sem_wait(printMessage);
+
+    fprintf(output, "%d     : JUDGE      : ends confirmation      : %d      : %d       : %d \n", *action, *insideWaiting, *registered, *immInside);
+
+    sem_post(printMessage);
+    for(int i = 0; i < toBeLet; i++){
+      sem_post(ongoingConfirmation);
+    }
+
+
+  } else {
+    fprintf(stdout, " DOES NOT WORK\n");
   }
+
+  mysleep(delay);
+  sem_wait(printMessage);
+  (*action)++; //so that we start from 1
+  fprintf(output, "%d     : JUDGE      : leaves      : %d      : %d       : %d \n", *action, *insideWaiting, *registered, *immInside);
+  sem_post(printMessage);
+
+  sem_post(judgeInHouse);
+}
+
+  sem_wait(printMessage);
+  (*action)++; //so that we start from 1
+  fprintf(output, "%d     : JUDGE      : finishes\n", *action);
+  sem_post(printMessage);
+}
+//
+
+void process_immigrant(int identificator, int getCertif) {
+  //BEHAVE YOU PIECES OF SHIT
+    sem_wait(judgeInHouse);
+    sem_wait(printMessage);
+
+    (*action)++; //so that we start from 1
+    (*immInside)++; //number of entered immigrants
+    (*insideWaiting)++;
+    fprintf(output, "%d     : IMM %d      : enters      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
+
+    sem_post(printMessage);
+    sem_post(judgeInHouse);
+
+    //registration
+    sem_wait(registration);
+    (*action)++;
+    (*registered)++;
+    fprintf(output, "%d     : IMM %d      : checks      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
+    sem_post(registration);
+
+    //caka na vydanie certifikatu sudcom
+
+////////////////////////////////////////////////////////////////////////////////
+    sem_wait(ongoingConfirmation);
+    sem_wait(printMessage);
+
+    (*action)++; //so that we start from 1
+    fprintf(output, "%d     : IMM %d      : wants certificate      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
+
+    sem_post(printMessage);
+
+    mysleep(getCertif);
+
+    sem_wait(printMessage);
+
+    (*action)++; //so that we start from 1
+    //NE a NC su znizene o pocet pristahovalcov, ktori uz dostali rozhodnutie
+    fprintf(output, "%d     : IMM %d      : got certificate      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
+
+    sem_post(printMessage);
+
+    sem_wait(judgeInHouse);
+    sem_wait(printMessage);
+    (*action)++;
+    (*immInside)--;
+
+    fprintf(output, "%d     : IMM %d      : leaves      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
+
+    sem_post(printMessage);
+    sem_post(judgeInHouse);
+
 }
   //
 
-void gen_immigrants(int numOfImmigrants, int delay) {
+void gen_immigrants(int numOfImmigrants, int delay, int getCertif) {
     int status = 0;
     pid_t wpid;
-    srand(time(NULL));
 
     for(int i = 0; i < numOfImmigrants; i ++) {
 
+      mysleep(delay);
       pid_t imm = fork();
 
       if(imm < 0) {
@@ -225,27 +375,23 @@ void gen_immigrants(int numOfImmigrants, int delay) {
         exit(FAIL);
 
       } else if (imm == 0) {
+
         sem_wait(printMessage);
         (*action)++;
-        fprintf(stdout, "%d     : IMM %d      : starts \n", *action, *immID + 1);
-        (*immID)++;
+        fprintf(output, "%d     : IMM %d      : starts \n", *action, *immID + 1);
         sem_post(printMessage);
 
-        process_immigrant(*immID);
+        (*immID) = i + 1;
+        process_immigrant(*immID, getCertif);
         //cleanup();
-        //exit(SUCCESS);
+        exit(SUCCESS);
 
       } else {
-        // sem_wait(printMessage);
-        // (*action)++;
-        // fprintf(stdout, "%d. I am parent\n", *action);
-        // sem_post(printMessage);
-        while ((wpid = wait(&status)) > 0); //waits till child process ends
-        exit(SUCCESS);
+    //    exit(SUCCESS);
       }
 
-      usleep((rand()%delay+1)*1000);
     }
+    while ((wpid = wait(&status)) > 0); //waits till child process ends
     exit(SUCCESS);
   }
 
@@ -271,11 +417,11 @@ int PI = strtol(argv[1], &end, 10);
 // //max time for generation of new process
 int IG = strtol(argv[2], &end, 10);
 // //max time for judges entrance since he last left
-// int JG = strtol(argv[3], &end, 10);
+int JG = strtol(argv[3], &end, 10);
 // //max time for obtaining of certificate
-// int IT = strtol(argv[4], &end, 10);
+int IT = strtol(argv[4], &end, 10);
 // //max time for issuance of a certificate
-// int JT = strtol(argv[5], &end, 10);
+int JT = strtol(argv[5], &end, 10);
 /*------------------------------------------------*/
 int status = 0;
 pid_t wpid;
@@ -288,7 +434,7 @@ pid_t wpid;
       return FAIL;
     } else if (judge == 0) {
       //judge child process
-      //process_judge();
+      process_judge(JT, PI, JG);
       exit(SUCCESS);
     } else {
       //second division of process
@@ -299,13 +445,11 @@ pid_t wpid;
         return FAIL;
       } else if (immigrant == 0) {
       //immgirant child process
-        gen_immigrants(PI, IG);
+        gen_immigrants(PI, IG, IT);
         exit(SUCCESS);
       } else {
-        //waitpid(-1, NULL, 0);
         while ((wpid = wait(&status)) > 0); //waits till child process ends
       }
-      //waitpid(-1, NULL, 0);
       while ((wpid = wait(&status)) > 0); //waits till child process ends
     }
   cleanup();
