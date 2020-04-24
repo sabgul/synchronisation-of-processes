@@ -22,10 +22,6 @@
 #include <pthread.h>
 #include <semaphore.h>
 
-/*------------------------Q-------------------------*/
-
-//Cas generovat pre kazdeho osobitne?
-
 /*--------------------Constants--------------------*/
 #define FAIL 1
 #define SUCCESS 0
@@ -126,7 +122,7 @@ int initialise() {
 void open_semaphores() {
   printMessage = sem_open("/xgulci00.ios.proj2.print", O_CREAT | O_EXCL, 0644, 1);
   judgeInHouse = sem_open("/xgulci00.ios.proj2.judge", O_CREAT | O_EXCL, 0644, 1);
-  allRegistered = sem_open("/xgulci00.ios.proj2.ready", O_CREAT | O_EXCL, 0644, 0);
+  allRegistered = sem_open("/xgulci00.ios.proj2.ready", O_CREAT | O_EXCL, 0644, 1);
   registration = sem_open("/xgulci00.ios.proj2.registration", O_CREAT | O_EXCL, 0644, 1);
   ongoingConfirmation = sem_open("/xgulci00.ios.proj2.confirmation", O_CREAT | O_EXCL, 0644, 0);
 
@@ -257,8 +253,10 @@ while(*confirmed < totalImm) {
     fprintf(output, "%d     : JUDGE      : waits for imm      : %d      : %d       : %d \n", *action, *insideWaiting, *registered, *immInside);
 
     sem_post(printMessage);
-    while(*insideWaiting != *registered);
+    sem_wait(allRegistered);
+    //while(*insideWaiting != *registered);
   }
+
   int toBeLet = 0;
   if (*insideWaiting == *registered) {
     sem_wait(printMessage);
@@ -286,7 +284,7 @@ while(*confirmed < totalImm) {
     }
 
 
-  } else {
+  } else { //debug
     fprintf(stdout, " DOES NOT WORK\n");
   }
 
@@ -326,6 +324,9 @@ void process_immigrant(int identificator, int getCertif) {
     fprintf(output, "%d     : IMM %d      : checks      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
     sem_post(registration);
 
+    if(*registered == *insideWaiting) {
+      sem_post(allRegistered);
+    }
     //caka na vydanie certifikatu sudcom
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -343,6 +344,8 @@ void process_immigrant(int identificator, int getCertif) {
 
     (*action)++; //so that we start from 1
     //NE a NC su znizene o pocet pristahovalcov, ktori uz dostali rozhodnutie
+    //(*registered)--;
+    //(*insideWaiting)--;
     fprintf(output, "%d     : IMM %d      : got certificate      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
 
     sem_post(printMessage);
@@ -351,7 +354,6 @@ void process_immigrant(int identificator, int getCertif) {
     sem_wait(printMessage);
     (*action)++;
     (*immInside)--;
-
     fprintf(output, "%d     : IMM %d      : leaves      : %d      : %d       : %d \n", *action, identificator, *insideWaiting, *registered, *immInside);
 
     sem_post(printMessage);
@@ -366,7 +368,6 @@ void gen_immigrants(int numOfImmigrants, int delay, int getCertif) {
 
     for(int i = 0; i < numOfImmigrants; i ++) {
 
-      mysleep(delay);
       pid_t imm = fork();
 
       if(imm < 0) {
@@ -390,6 +391,7 @@ void gen_immigrants(int numOfImmigrants, int delay, int getCertif) {
     //    exit(SUCCESS);
       }
 
+      mysleep(delay);
     }
     while ((wpid = wait(&status)) > 0); //waits till child process ends
     exit(SUCCESS);
