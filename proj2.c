@@ -363,8 +363,8 @@ void process_immigrant(int identificator, int getCertif) {
   //
 
 void gen_immigrants(int numOfImmigrants, int delay, int getCertif) {
-    int status = 0;
-    pid_t wpid;
+//    int status = 0;
+  //  pid_t wpid;
 
     for(int i = 0; i < numOfImmigrants; i ++) {
 
@@ -393,7 +393,8 @@ void gen_immigrants(int numOfImmigrants, int delay, int getCertif) {
 
       mysleep(delay);
     }
-    while ((wpid = wait(&status)) > 0); //waits till child process ends
+    //while ((wpid = wait(&status)) > 0); //waits till child process ends
+    for(int i = 0; i<numOfImmigrants; i++) {wait(NULL);}
     exit(SUCCESS);
   }
 
@@ -425,8 +426,8 @@ int IT = strtol(argv[4], &end, 10);
 // //max time for issuance of a certificate
 int JT = strtol(argv[5], &end, 10);
 /*------------------------------------------------*/
-int status = 0;
-pid_t wpid;
+//int status = 0;
+//pid_t wpid;
 
 //First division of process
     pid_t judge = fork();
@@ -450,12 +451,16 @@ pid_t wpid;
         gen_immigrants(PI, IG, IT);
         exit(SUCCESS);
       } else {
-        while ((wpid = wait(&status)) > 0); //waits till child process ends
+      //  while ((wpid = wait(&status)) > 0); //waits till child process ends
+      wait(NULL);
       }
-      while ((wpid = wait(&status)) > 0); //waits till child process ends
+    //  while ((wpid = wait(&status)) > 0); //waits till child process ends
+    wait(NULL);
     }
-  cleanup();
   //exit(SUCCESS);
+  wait(NULL);
+  wait(NULL);
+  cleanup();
   return SUCCESS;
 }
 
